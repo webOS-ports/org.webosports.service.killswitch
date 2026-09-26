@@ -1,0 +1,5 @@
+{
+    "killswitch.query": [
+        "org.webosports.service.killswitch/getStatus"
+    ]
+}

@@ -1,0 +1,40 @@
+# PinePhone / PinePhone Pro - six DIP switches behind the back cover.
+#
+# UNVERIFIED: the paths below have not been checked on hardware. The switches
+# cut power rather than signalling anything, so each one is inferred from the
+# disappearance of whatever it powers - which means the path has to be the
+# thing that actually goes away on that kernel, and that is worth confirming
+# before shipping this. Anything wrong here reports a switch as engaged when it
+# is not, which in a privacy indicator is the wrong way round to be wrong.
+#
+# Modem, WiFi/BT and the cameras can be inferred this way. The microphone and
+# headphone switches cannot: they sit in the analogue path with nothing to
+# detect, exactly like the FLX1s microphone.
+
+[wifi-bt]
+label=WiFi and Bluetooth
+source=presence
+path=/sys/class/net/wlan0
+
+[modem]
+label=Modem
+source=presence
+path=/dev/ttyUSB2
+
+[camera-rear]
+label=Rear camera
+source=presence
+path=/dev/video1
+
+[camera-front]
+label=Front camera
+source=presence
+path=/dev/video2
+
+[microphone]
+label=Microphone
+source=unreadable
+
+[headphone]
+label=Headphone
+source=unreadable

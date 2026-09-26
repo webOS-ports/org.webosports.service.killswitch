@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.webosports.service.killswitch
+Exec=@WEBOS_INSTALL_SBINDIR@/killswitchd
+Type=static

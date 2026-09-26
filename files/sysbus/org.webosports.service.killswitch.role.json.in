@@ -1,0 +1,13 @@
+{
+    "exeName": "@WEBOS_INSTALL_SBINDIR@/killswitchd",
+    "trustLevel": "oem",
+    "type": "regular",
+    "allowedNames": ["org.webosports.service.killswitch", ""],
+    "permissions": [
+        {
+            "service": "org.webosports.service.killswitch",
+            "inbound": ["*"],
+            "outbound": ["*"]
+        }
+    ]
+}

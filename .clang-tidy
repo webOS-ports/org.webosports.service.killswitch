@@ -1,0 +1,27 @@
+# Checks this service is expected to pass cleanly.
+#
+# readability-identifier-length is off deliberately: "sh" is the luna-service2
+# handle name used by every webOS service including the ones this was modelled
+# on, and renaming it here would make this the odd one out rather than the
+# tidy one. "i" for a loop counter and "sw" for the switch being handled are
+# the same kind of thing.
+#
+# readability-magic-numbers and readability-isolate-declaration are off for the
+# same reason - they disagree with the surrounding codebase, not with this code.
+#
+# cert-err33-c is off because it wants every printf-family return value checked.
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  cert-*,
+  readability-*,
+  performance-*,
+  portability-*,
+  -readability-identifier-length,
+  -readability-braces-around-statements,
+  -readability-isolate-declaration,
+  -readability-magic-numbers,
+  -cert-err33-c
+
+WarningsAsErrors: '*'
+HeaderFilterRegex: 'src/.*\.h$'

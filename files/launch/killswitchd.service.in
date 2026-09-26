@@ -1,0 +1,28 @@
+[Unit]
+Description=LuneOS hardware privacy switch service
+
+# Nothing to report without a config, and the daemon exits straight away in
+# that case - so this is harmless on a machine with no switches.
+ConditionPathExists=@WEBOS_INSTALL_SYSCONFDIR@/killswitchd.conf
+
+# The registration made with the hub cannot outlive it and nothing in the
+# process re-establishes one, so killswitchd has to be restarted whenever the
+# hub is. PartOf covers the deliberate case - systemctl restart ls-hubd takes
+# killswitchd with it - while the disconnect handler in main.c covers the hub
+# crashing or being stopped some other way. Both are needed.
+After=ls-hubd.service
+PartOf=ls-hubd.service
+
+# On a Halium device the actions a switch triggers talk to the Android
+# container, so do not start before it is there. Harmless where it does not
+# exist: systemd ignores an ordering dependency on an absent unit.
+After=android-system.service
+
+[Service]
+Type=simple
+ExecStart=@WEBOS_INSTALL_SBINDIR@/killswitchd
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

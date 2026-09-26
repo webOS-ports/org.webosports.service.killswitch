@@ -1,0 +1,16 @@
+#!/bin/sh
+# Stop the camera HAL when the FLX1s camera switch is engaged.
+#
+# The vendor sets persist.vendor.camera.disabled itself, but nothing in the
+# vendor image acts on it - there is no init trigger for that property, unlike
+# persist.vendor.radio.disabled which mtkrild.rc does handle. So on LuneOS the
+# switch would otherwise flip a property nobody reads while camerahalserver
+# stays up.
+#
+# Stopping the service, not killing the process: init owns it and will restart
+# it on the matching ctl.start, which is what camera-open asks for.
+set -e
+[ -x /android/system/bin/setprop ] || exit 0
+/android/system/bin/setprop persist.vendor.camera.disabled 1
+/android/system/bin/setprop ctl.stop camerahalserver 2>/dev/null || true
+exit 0

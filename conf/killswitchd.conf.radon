@@ -1,0 +1,44 @@
+# FuriPhone FLX1s (radon) - three hardware privacy switches.
+#
+# Camera and cellular are read from the ODM custom_keys driver, whose
+# attributes read 0 when the switch is engaged and 1 when it is not. Both
+# GPIOs idle low with the switch open, and the driver's own "pressed" field is
+# inverted relative to the physical switch, so trust these values and not that
+# name.
+#
+# The detection side is already done for us on this device: the vendor's
+# nvram@1.1-service holds an exclusive EVIOCGRAB on the switch input device and
+# sets persist.vendor.camera.disabled / persist.vendor.radio.disabled itself.
+# We poll the same sysfs attributes rather than depend on that, so the reading
+# does not rely on the container being up.
+
+[camera]
+label=Camera
+source=sysfs
+path=/sys/devices/platform/custom-keys/cam_switch
+blocked-value=0
+# The camera needs an action. Unlike the cellular switch there is no init
+# trigger for persist.vendor.camera.disabled anywhere in the vendor image, so
+# the property flips and camerahalserver carries on running - the switch is
+# inert without this.
+on-blocked=/usr/libexec/killswitchd/camera-blocked
+on-open=/usr/libexec/killswitchd/camera-open
+
+[cellular]
+label=Cellular
+source=sysfs
+path=/sys/devices/platform/custom-keys/nwk_switch
+blocked-value=0
+# No action on purpose. The vendor HAL sets persist.vendor.radio.disabled and
+# mtkrild.rc already stops and restarts vendor.ril-daemon-mtk on it; ofono sees
+# the binder service die and re-attaches when it returns. Verified end to end,
+# so anything here would be a second hand on the same lever.
+
+[microphone]
+label=Microphone
+# Not readable, and deliberately not approximated. This switch physically
+# breaks the analogue line to the codec - measured -46.1 dBFS with it open
+# against -86.1 dBFS engaged, a 40 dB drop to the ADC noise floor - and appears
+# in no sysfs attribute, no input device and no property. Sampling the
+# microphone to find out would defeat the switch.
+source=unreadable

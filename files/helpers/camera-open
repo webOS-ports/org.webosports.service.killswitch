@@ -1,0 +1,7 @@
+#!/bin/sh
+# Bring the camera HAL back when the FLX1s camera switch is released.
+set -e
+[ -x /android/system/bin/setprop ] || exit 0
+/android/system/bin/setprop persist.vendor.camera.disabled 0
+/android/system/bin/setprop ctl.start camerahalserver 2>/dev/null || true
+exit 0
