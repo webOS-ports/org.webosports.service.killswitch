@@ -33,4 +33,4 @@ webos_build_system_bus_files()
 # Helpers a config may point on-blocked/on-open at. Installed unconditionally;
 # they gate themselves on the device they are for.
 install(PROGRAMS files/helpers/camera-blocked files/helpers/camera-open
-        DESTINATION ${WEBOS_INSTALL_LIBEXECDIR}/killswitchd)
+        DESTINATION ${WEBOS_INSTALL_LIBEXEC}/killswitchd)
