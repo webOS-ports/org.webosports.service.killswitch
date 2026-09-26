@@ -1,5 +1,8 @@
 {
     "com.webos.surfacemanager*": [
         "killswitch.query"
+    ],
+    "org.webosports.app.camera": [
+        "killswitch.query"
     ]
 }
