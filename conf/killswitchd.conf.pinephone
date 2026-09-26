@@ -1,35 +1,56 @@
-# PinePhone / PinePhone Pro - six DIP switches behind the back cover.
+# PinePhone (1.2) - six DIP switches behind the back cover.
 #
-# UNVERIFIED: the paths below have not been checked on hardware. The switches
-# cut power rather than signalling anything, so each one is inferred from the
-# disappearance of whatever it powers - which means the path has to be the
-# thing that actually goes away on that kernel, and that is worth confirming
-# before shipping this. Anything wrong here reports a switch as engaged when it
-# is not, which in a privacy indicator is the wrong way round to be wrong.
+# MEASURED on hardware, one switch at a time, diffing a full snapshot of every
+# netdev, /dev node, rfkill and claimed GPIO either side of each flip. The
+# result is blunt: of the six, only the modem is visible to software at all.
 #
-# Modem, WiFi/BT and the cameras can be inferred this way. The microphone and
-# headphone switches cannot: they sit in the analogue path with nothing to
-# detect, exactly like the FLX1s microphone.
-
-[wifi-bt]
-label=WiFi and Bluetooth
-source=presence
-path=/sys/class/net/wlan0
+#   1 modem       wwan0, ttyUSB0-3 and cdc-wdm0 all disappear
+#   2 wifi/bt     nothing changes
+#   3 microphone  nothing changes
+#   4 rear cam    nothing changes
+#   5 front cam   nothing changes
+#   6 headphone   nothing changes
+#
+# The modem is the only one on a bus that hot-removes. Everything else sits on
+# SDIO, I2C/CSI or the analogue audio path, and none of those tear down their
+# kernel objects when the power goes away:
+#
+#   wifi/bt   wlan0, phy0, the mmc device and rfkill all look exactly as they
+#             do when the radio is merely idle. The chip is genuinely dead -
+#             dmesg fills with "rtw88_8723cs sdio read8 failed: -110" and a
+#             scan returns nothing - but the only way to find that out is to
+#             use the radio the user just switched off.
+#   cameras   /dev/video* and /dev/media* belong to the CSI bridge driver and
+#             are created at probe, whatever the sensor is doing.
+#   mic       cuts the analogue line. Measured with the switch engaged: median
+#             RMS 0.0, peak 0 - digital silence, not merely quiet. Sampling the
+#             microphone to detect it would defeat the switch.
+#
+# So the other five are declared unreadable rather than guessed at. That is
+# deliberately more useful than it sounds: the UI lists the switch and says it
+# cannot see its position, instead of silently reporting "on" whenever the
+# hardware happens to be idle - which is the failure mode a privacy indicator
+# must not have.
 
 [modem]
 label=Modem
 source=presence
-path=/dev/ttyUSB2
+# cdc-wdm0 rather than ttyUSB2: both vanish with the switch, but ttyUSB
+# numbering is a shared namespace that any USB serial adapter can shift,
+# while cdc-wdm0 is the modem's own QMI control node.
+path=/dev/cdc-wdm0
+
+[wifi-bt]
+label=WiFi and Bluetooth
+source=unreadable
 
 [camera-rear]
 label=Rear camera
-source=presence
-path=/dev/video1
+source=unreadable
 
 [camera-front]
 label=Front camera
-source=presence
-path=/dev/video2
+source=unreadable
 
 [microphone]
 label=Microphone
