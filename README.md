@@ -1,5 +1,12 @@
-# org.webosports.service.killswitch
+org.webosports.service.killswitch
+=================================
 
+Summary
+-------
+Reports the hardware privacy switches a device has on the luna bus
+
+Description
+-----------
 Reports the hardware privacy switches a device has on the luna bus, so the
 shell can show them, and runs whatever action a switch needs that the platform
 does not already perform itself.
