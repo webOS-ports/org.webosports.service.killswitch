@@ -32,6 +32,18 @@
 # hardware happens to be idle - which is the failure mode a privacy indicator
 # must not have.
 
+# Caveat measured alongside the rest: flipping these switches back ON does not
+# restore the hardware live. With all six returned to on, the modem had not
+# re-enumerated, wlan0 still saw no networks and the microphone was still
+# silent. The EG25 needs a PWRKEY pulse to boot rather than just power, and
+# rtw88 stays wedged after the SDIO timeouts - both want a reboot.
+#
+# So the modem below will keep reporting "blocked" after the switch is back on
+# until the device is rebooted. That is the truth about the hardware rather
+# than about the switch, and reporting the modem as present when it is not
+# would be the worse error - but it does mean the indicator can lag the switch
+# by a reboot on this device.
+
 [modem]
 label=Modem
 source=presence
