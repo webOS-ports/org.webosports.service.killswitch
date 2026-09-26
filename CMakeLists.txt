@@ -22,6 +22,11 @@ webos_add_compiler_flags(ALL -Wall -Wextra -Wno-unused-parameter)
 add_executable(killswitchd src/main.c src/killswitch.c)
 target_link_libraries(killswitchd ${GLIB2_LDFLAGS} ${LS2_LDFLAGS} ${PBNJSON_C_LDFLAGS})
 
+# cmake-modules-webos sets this as a CMake variable, not as a C macro, so the
+# default config path has to be handed to the compiler explicitly.
+target_compile_definitions(killswitchd PRIVATE
+                           WEBOS_INSTALL_SYSCONFDIR="${WEBOS_INSTALL_SYSCONFDIR}")
+
 webos_build_daemon(NAME killswitchd LAUNCH files/launch)
 webos_build_system_bus_files()
 
