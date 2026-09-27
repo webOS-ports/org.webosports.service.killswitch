@@ -1,7 +1,46 @@
 #!/bin/sh
-# Bring the camera HAL back when the FLX1s camera switch is released.
+# Bring the camera HAL back when the FLX1s camera switch is released, and do not
+# return until a camera can actually be opened.
+#
+# Returning as soon as ctl.start has been issued is not good enough. The switch
+# cuts power to the sensor, so after it is released camerahalserver is up within
+# about 10ms but cannot open the sensor for several seconds more - measured at
+# eight to nine seconds on the FLX1s. A client that attaches inside that window
+# blocks inside the HAL, in a call it cannot make asynchronous, and its UI
+# freezes for the duration.
+#
+# killswitchd reports actionPending while this script runs, so waiting here is
+# what lets a client show that the camera is coming back and stay responsive
+# instead. The wait belongs in this process precisely because blocking here
+# costs nothing.
 set -e
-[ -x /android/system/bin/setprop ] || exit 0
-/android/system/bin/setprop persist.vendor.camera.disabled 0
-/android/system/bin/setprop ctl.start camerahalserver 2>/dev/null || true
+
+SETPROP=/android/system/bin/setprop
+[ -x "$SETPROP" ] || exit 0
+
+$SETPROP persist.vendor.camera.disabled 0
+$SETPROP ctl.start camerahalserver 2>/dev/null || true
+
+# Without a probe there is nothing to wait for, so a machine with no gstreamer
+# tools just gets the old behaviour rather than a failure.
+command -v gst-launch-1.0 >/dev/null 2>&1 || exit 0
+
+# The gated droid plugin needs hybris preloaded or it cannot be loaded at all
+# ("cannot allocate memory in static TLS block"), and the registry it was built
+# against lives in the shared cache, not in root's.
+export GST_PLUGIN_PATH=/usr/lib/gstreamer-1.0-gated
+export XDG_CACHE_HOME=/var/cache/xdg
+export LD_PRELOAD=/usr/lib/libhybris-common.so.1
+
+# Bounded, because a camera that never opens must not hold the switch report
+# for ever - killswitchd gives up on us after 30s in any case.
+n=0
+while [ $n -lt 20 ]; do
+	n=$((n + 1))
+	if gst-launch-1.0 -q droidcamsrc camera-device=0 ! fakesink num-buffers=1 \
+	   >/dev/null 2>&1; then
+		exit 0
+	fi
+done
+
 exit 0

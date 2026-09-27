@@ -57,6 +57,14 @@ typedef struct {
 	KillSwitchSource source;
 	gchar *path;             /* sysfs attribute, or the path whose absence blocks */
 	gchar *blocked_value;    /* SOURCE_SYSFS: contents meaning "blocked" */
+	/*
+	 * True while this switch's action is still running. Published as
+	 * actionPending so a client knows the switch has moved but the hardware
+	 * behind it is not usable yet - see run_action() in main.c for why that
+	 * distinction is worth a field of its own.
+	 */
+	bool action_pending;
+
 	gchar *on_blocked;       /* optional command to run when it engages */
 	gchar *on_open;          /* optional command to run when it disengages */
 	KillSwitchState state;

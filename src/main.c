@@ -26,6 +26,15 @@
 #define DEFAULT_CONFIG  WEBOS_INSTALL_SYSCONFDIR "/killswitchd.conf"
 #define DEFAULT_POLL_MS 1000
 
+/*
+ * Safety net for a switch action that never finishes. The camera action waits
+ * for a sensor that was unpowered to become openable, which on the FLX1s runs
+ * to eight or nine seconds, so this has to be generously longer than that. It
+ * is not a normal timeout: reaching it means telling a client the hardware is
+ * ready when nobody knows that it is, which is why it is logged.
+ */
+#define ACTION_WAIT_MS  30000
+
 static GMainLoop *main_loop = NULL;
 static LSHandle *service_handle = NULL;
 static GList *switches = NULL;
@@ -53,6 +62,17 @@ static jvalue_ref build_status(void)
 		 */
 		jobject_put(entry, J_CSTR_TO_JVAL("readable"),
 		            jboolean_create(sw->source != SOURCE_UNREADABLE));
+
+		/*
+		 * The switch has moved but the hardware behind it is not ready yet.
+		 * A client that touches the hardware in this window pays for it: the
+		 * camera app attaching while camerahalserver cannot open a sensor that
+		 * has just been powered back up blocks for seconds, in a call it cannot
+		 * make asynchronous, which freezes its UI. With this it can say the
+		 * camera is starting and stay responsive until the field clears.
+		 */
+		jobject_put(entry, J_CSTR_TO_JVAL("actionPending"),
+		            jboolean_create(sw->action_pending));
 
 		jarray_append(array, entry);
 	}
@@ -85,10 +105,69 @@ static void publish_status(void)
 }
 
 /*
- * Run the command a switch asks for when it changes. Asynchronous on purpose:
- * these end up stopping a HAL inside the Android container, which is not
- * something to do with the main loop blocked.
+ * Actions, and telling clients that the hardware behind a switch is not ready
+ * yet.
  *
+ * Moving a switch and the hardware being usable again are not the same moment,
+ * and pretending they are is expensive. The camera action asks init to start
+ * camerahalserver and then waits for a sensor that has just been powered back
+ * up to be openable; until that finishes, a client that attaches blocks inside
+ * the HAL - measured at eight to ten seconds in the camera app, in a call it
+ * cannot make asynchronous, so its whole UI freezes and even a spinner saying
+ * the camera is starting stops moving.
+ *
+ * So the status goes out immediately, carrying actionPending for the switch
+ * whose action is still running, and goes out again when the action finishes.
+ * A client can then show that the hardware is coming back while staying
+ * responsive, and only touch it once the flag clears. Clients must wait for
+ * that; it is the whole point of the field.
+ *
+ * Actions themselves still run out of the main loop, because they reach into
+ * the Android container and are not something to do with the loop blocked.
+ */
+static guint action_deadline_source;
+
+static void clear_pending(KillSwitch *sw)
+{
+	if (!sw || !sw->action_pending)
+		return;
+
+	sw->action_pending = false;
+	publish_status();
+}
+
+static gboolean action_deadline_expired(gpointer user_data)
+{
+	GList *item;
+
+	action_deadline_source = 0;
+
+	for (item = switches; item; item = item->next) {
+		KillSwitch *sw = item->data;
+
+		if (!sw->action_pending)
+			continue;
+
+		g_warning("killswitchd: [%s] action still running after %dms, "
+		          "reporting the hardware as ready anyway", sw->id,
+		          ACTION_WAIT_MS);
+		clear_pending(sw);
+	}
+
+	return G_SOURCE_REMOVE;
+}
+
+/* Signature is GChildWatchFunc's, so the parameter order is not ours to pick. */
+/* NOLINTNEXTLINE(bugprone-easily-swappable-parameters) */
+static void action_finished(GPid pid, gint status, gpointer user_data)
+{
+	(void) status;
+
+	g_spawn_close_pid(pid);
+	clear_pending(user_data);
+}
+
+/*
  * This exists because detection and action are separate problems on these
  * devices. On the FLX1s the vendor's own HAL already sets
  * persist.vendor.radio.disabled and init stops the RIL, so the cellular switch
@@ -96,10 +175,11 @@ static void publish_status(void)
  * so its HAL keeps running unless something stops it. Which of those a machine
  * needs belongs in its config, not in this daemon.
  */
-static void run_action(const KillSwitch *sw, const char *command)
+static void run_action(KillSwitch *sw, const char *command)
 {
 	GError *error = NULL;
 	gchar **argv = NULL;
+	GPid pid = 0;
 
 	if (!command || !*command)
 		return;
@@ -112,13 +192,22 @@ static void run_action(const KillSwitch *sw, const char *command)
 	}
 
 	if (!g_spawn_async(NULL, argv, NULL,
-	                   G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL |
-	                   G_SPAWN_STDERR_TO_DEV_NULL,
-	                   NULL, NULL, NULL, &error)) {
+	                   G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD |
+	                   G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+	                   NULL, NULL, &pid, &error)) {
 		g_warning("killswitchd: [%s] action '%s' failed: %s",
 		          sw->id, command, error->message);
 		g_clear_error(&error);
+		g_strfreev(argv);
+		return;
 	}
+
+	sw->action_pending = true;
+	g_child_watch_add(pid, action_finished, sw);
+
+	if (!action_deadline_source)
+		action_deadline_source = g_timeout_add(ACTION_WAIT_MS,
+		                                      action_deadline_expired, NULL);
 
 	g_strfreev(argv);
 }
