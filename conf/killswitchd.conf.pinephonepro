@@ -1,0 +1,63 @@
+# PinePhone Pro - six DIP switches behind the back cover, same six functions as
+# the PinePhone: modem, WiFi/BT, microphone, both cameras and the headphone
+# jack.
+#
+# NOT measured on this device. Everything below follows from the PinePhone,
+# where all six were measured one at a time by diffing a full snapshot of every
+# netdev, /dev node, rfkill and claimed GPIO either side of each flip - see
+# killswitchd.conf.pinephone for that work. The structural result carries over
+# because it is a property of the buses, not of the board: only the modem sits
+# on a bus that hot-removes. WiFi/BT is SDIO, the cameras are I2C/CSI behind a
+# bridge driver that creates /dev/video* at probe whatever the sensor is doing,
+# and the microphone and headphone are analogue. None of those tear down their
+# kernel objects when the power goes away, so there is nothing to observe.
+#
+# The one inherited positive claim is the modem node, and it is a strong one
+# rather than a guess: the Pro carries the same Quectel EG25-G, and
+# meta-pine64-luneos ships it the same udev rules as the PinePhone, matching the
+# same USB 2c7c:0125 - so cdc-wdm0 comes from the same driver on the same
+# composite device. Worth confirming on hardware all the same, because the
+# failure mode if it is wrong is the bad one: a missing node reads as "blocked",
+# which would tell the user the modem is off while it is transmitting. One flip
+# with `ls /dev/cdc-wdm0` either side settles it.
+#
+# The five unreadable entries need no such confirmation. Declaring a switch
+# unreadable cannot be wrong in the dangerous direction: the UI says it cannot
+# see the position instead of reporting "on" whenever the hardware happens to be
+# idle, which is the failure a privacy indicator must not have.
+
+# Unlike the PinePhone, the Pro ships eg25-manager (see
+# udev-extraconf_1.1.bbappend, which RDEPENDS it for pinephonepro only). The
+# PinePhone's modem stays gone after its switch is turned back on because the
+# EG25 needs a PWRKEY pulse to boot rather than just power, and nothing on that
+# device gives it one. eg25-manager is exactly the thing that does, so the Pro
+# is expected to recover without a reboot where the PinePhone does not. Expected
+# - not measured.
+
+[modem]
+label=Modem
+source=presence
+# cdc-wdm0 rather than ttyUSB2: both vanish with the switch, but ttyUSB
+# numbering is a shared namespace that any USB serial adapter can shift, while
+# cdc-wdm0 is the modem's own QMI control node.
+path=/dev/cdc-wdm0
+
+[wifi-bt]
+label=WiFi and Bluetooth
+source=unreadable
+
+[camera-rear]
+label=Rear camera
+source=unreadable
+
+[camera-front]
+label=Front camera
+source=unreadable
+
+[microphone]
+label=Microphone
+source=unreadable
+
+[headphone]
+label=Headphone
+source=unreadable
