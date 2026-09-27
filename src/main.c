@@ -26,6 +26,13 @@
 #define DEFAULT_CONFIG  WEBOS_INSTALL_SYSCONFDIR "/killswitchd.conf"
 #define DEFAULT_POLL_MS 1000
 
+/*
+ * How long to hold a status update waiting for a switch's action to finish.
+ * The actions here are two setprop calls; anything slower than this is stuck,
+ * and a late update beats a lost one.
+ */
+#define ACTION_WAIT_MS  2000
+
 static GMainLoop *main_loop = NULL;
 static LSHandle *service_handle = NULL;
 static GList *switches = NULL;
@@ -85,10 +92,69 @@ static void publish_status(void)
 }
 
 /*
- * Run the command a switch asks for when it changes. Asynchronous on purpose:
- * these end up stopping a HAL inside the Android container, which is not
- * something to do with the main loop blocked.
+ * Actions and the status update they belong with.
  *
+ * Subscribers must not be told a switch was released before the action for it
+ * has run, and this is not a nicety. The camera action asks init to start
+ * camerahalserver; a client that hears "released" first attaches to a HAL that
+ * is not there yet, and attaching to a stopped HAL blocks the caller until it
+ * turns up - measured at over ten seconds in the camera app, with its UI frozen
+ * for the duration. Once the action has run the HAL process is up within about
+ * 10ms, and an attach that is merely too early fails in ~140ms instead, which a
+ * client can retry without freezing.
+ *
+ * So actions still run out of the main loop - they reach into the Android
+ * container and are not something to do with it blocked - but the status is
+ * held until they have finished. The timeout is there so a helper that hangs
+ * delays the update rather than losing it.
+ */
+static int pending_actions;
+static bool status_deferred;
+static guint status_deadline_source;
+
+static void publish_deferred_status(void)
+{
+	if (status_deadline_source) {
+		g_source_remove(status_deadline_source);
+		status_deadline_source = 0;
+	}
+
+	if (!status_deferred)
+		return;
+
+	status_deferred = false;
+	publish_status();
+}
+
+static gboolean status_deadline_expired(gpointer user_data)
+{
+	(void) user_data;
+
+	g_warning("killswitchd: switch action still running after %dms, "
+	          "publishing status anyway", ACTION_WAIT_MS);
+	status_deadline_source = 0;
+	publish_deferred_status();
+
+	return G_SOURCE_REMOVE;
+}
+
+/* Signature is GChildWatchFunc's, so the parameter order is not ours to pick. */
+/* NOLINTNEXTLINE(bugprone-easily-swappable-parameters) */
+static void action_finished(GPid pid, gint status, gpointer user_data)
+{
+	(void) status;
+	(void) user_data;
+
+	g_spawn_close_pid(pid);
+
+	if (pending_actions > 0)
+		pending_actions--;
+
+	if (pending_actions == 0)
+		publish_deferred_status();
+}
+
+/*
  * This exists because detection and action are separate problems on these
  * devices. On the FLX1s the vendor's own HAL already sets
  * persist.vendor.radio.disabled and init stops the RIL, so the cellular switch
@@ -100,6 +166,7 @@ static void run_action(const KillSwitch *sw, const char *command)
 {
 	GError *error = NULL;
 	gchar **argv = NULL;
+	GPid pid = 0;
 
 	if (!command || !*command)
 		return;
@@ -112,13 +179,18 @@ static void run_action(const KillSwitch *sw, const char *command)
 	}
 
 	if (!g_spawn_async(NULL, argv, NULL,
-	                   G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL |
-	                   G_SPAWN_STDERR_TO_DEV_NULL,
-	                   NULL, NULL, NULL, &error)) {
+	                   G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD |
+	                   G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+	                   NULL, NULL, &pid, &error)) {
 		g_warning("killswitchd: [%s] action '%s' failed: %s",
 		          sw->id, command, error->message);
 		g_clear_error(&error);
+		g_strfreev(argv);
+		return;
 	}
+
+	pending_actions++;
+	g_child_watch_add(pid, action_finished, NULL);
 
 	g_strfreev(argv);
 }
@@ -158,8 +230,17 @@ static gboolean poll_switches(gpointer user_data)
 		changed = true;
 	}
 
-	if (changed)
-		publish_status();
+	if (changed) {
+		if (pending_actions > 0) {
+			status_deferred = true;
+			if (!status_deadline_source)
+				status_deadline_source = g_timeout_add(ACTION_WAIT_MS,
+				                                      status_deadline_expired,
+				                                      NULL);
+		} else {
+			publish_status();
+		}
+	}
 
 	return G_SOURCE_CONTINUE;
 }
